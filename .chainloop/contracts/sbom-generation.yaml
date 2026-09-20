@@ -1,0 +1,25 @@
+# SBOM contract for this repo.
+#
+# sbom-with-licenses is skipped, deliberately. The SBOM's root component is a
+# synthetic directory entry ("." of type file) that can never carry a license,
+# and Go modules carry no license metadata in go.mod either. No agent and no
+# human can fix that violation, so enforcing it only teaches people to ignore red.
+#
+# The rule we apply to this contract: a policy belongs in enforcement only if
+# somebody can act on it. Everything else is skipped here, in git, where the
+# exception is reviewable.
+apiVersion: chainloop.dev/v1
+kind: Contract
+metadata:
+  name: sbx-demo-sbom-generation
+spec:
+  materials:
+    - name: sbom
+      type: SBOM_CYCLONEDX_JSON
+  policies:
+    attestation:
+      - ref: source-commit
+  policyGroups:
+    - ref: sbom-quality
+      skip:
+        - sbom-with-licenses
