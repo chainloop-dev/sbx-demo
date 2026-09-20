@@ -1,0 +1,47 @@
+apiVersion: workflowcontract.chainloop.dev/v1
+kind: Policy
+metadata:
+  name: session-stays-in-one-stage
+  description: >-
+    An AI coding session must work on one stage at a time: intent (docs/prds/),
+    design (docs/specs/), or implementation. A session that edits the PRD while
+    implementing it has rewritten the requirement to match the code.
+  annotations:
+    category: ai
+spec:
+  policies:
+    - kind: CHAINLOOP_AI_CODING_SESSION
+      embedded: |
+        package main
+
+        import rego.v1
+
+        default valid_input := false
+
+        valid_input if {
+          input.data.code_changes.files
+        }
+
+        stages contains "intent" if {
+          some f in input.data.code_changes.files
+          startswith(f.path, "docs/prds/")
+        }
+
+        stages contains "design" if {
+          some f in input.data.code_changes.files
+          startswith(f.path, "docs/specs/")
+        }
+
+        stages contains "implementation" if {
+          some f in input.data.code_changes.files
+          not startswith(f.path, "docs/")
+        }
+
+        violations contains msg if {
+          valid_input
+          count(stages) > 1
+          msg := sprintf(
+            "session touched %d stages in one run (%v); intent, design and implementation belong in separate sessions",
+            [count(stages), concat(", ", sort(stages))],
+          )
+        }

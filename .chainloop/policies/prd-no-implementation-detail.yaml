@@ -1,0 +1,53 @@
+apiVersion: workflowcontract.chainloop.dev/v1
+kind: Policy
+metadata:
+  name: prd-no-implementation-detail
+  description: >-
+    A PRD states direction, not design. This policy asks an AI reviewer whether the
+    PRD produced by the session stayed at that altitude: context, problem, summary
+    and notes, with no flags, schemas, endpoints or acceptance criteria. Those
+    belong in the spec.
+  annotations:
+    category: ai
+spec:
+  policies:
+    - kind: CHAINLOOP_AI_CODING_SESSION
+      embedded: |
+        package main
+
+        import rego.v1
+
+        default valid_input := false
+
+        valid_input if {
+          input.data.code_changes.files
+        }
+
+        # Only sessions that wrote a PRD are in scope.
+        wrote_prd if {
+          some f in input.data.code_changes.files
+          startswith(f.path, "docs/prds/")
+        }
+
+        prompt := concat(" ", [
+          "This is an AI coding session that authored a product requirements document under docs/prds/.",
+          "A PRD states direction only: context, the problem, a summary of the intent, and open notes.",
+          "It must NOT contain implementation detail: no CLI flags, function or file names, schemas,",
+          "API endpoints, data structures, acceptance criteria, or test plans. Those belong in a spec.",
+          "Report one violation per piece of implementation detail you find in the PRD the session wrote,",
+          "quoting the offending phrase. If the PRD stays at the right altitude, report no violations.",
+        ])
+
+        evaluation := chainloop.evidence_prompt(input.chainloop_metadata.digest.sha256, prompt) if wrote_prd
+
+        violations contains msg if {
+          wrote_prd
+          not evaluation.skipped
+          some msg in evaluation.violations
+        }
+
+        # Make a silently disabled AI evaluation visible rather than a green tick.
+        violations contains "AI evaluation was skipped; this policy proved nothing on this run" if {
+          wrote_prd
+          evaluation.skipped
+        }

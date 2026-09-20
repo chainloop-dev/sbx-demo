@@ -1,0 +1,46 @@
+# Contract for this repo's AI coding sessions.
+#
+#   chainloop apply -f .chainloop/contracts/
+#
+# The first six policies are Chainloop's built-in catalog, copied from the library
+# contract `chainloop-ai-coding-session` so a fork behaves identically regardless of
+# what its organization happens to have imported.
+#
+# The last two are this repo's own, in ../policies/, referenced by relative file://
+# path. `kind: Policy` is not accepted by `chainloop apply` on CLI 1.109.x, so they
+# are attached here rather than registered separately.
+apiVersion: chainloop.dev/v1
+kind: Contract
+metadata:
+  name: sbx-demo-ai-coding-session
+  description: >-
+    Governs the PRD, spec and implementation sessions in this repo. Inherits the
+    built-in AI coding session checks and adds two of its own: a deterministic rule
+    keeping each session to a single stage, and an AI reviewer keeping PRDs free of
+    implementation detail.
+spec:
+  policies:
+    attestation:
+      - ref: source-commit
+        with:
+          check_signature: "yes"
+      - ref: ai-agent-present
+    materials:
+      - ref: ai-config-ai-agents-allowed
+        with:
+          allowed_agents: |
+            claude-code
+            claude
+            cursor
+            opencode
+      - ref: ai-config-no-dangerous-commands
+      - ref: ai-config-no-secrets
+        with:
+          allowed_signed_url_hosts: uploads.linear.app
+      - ref: ai-config-mcp-servers-allowed
+        with:
+          allowed_servers: |
+            claude_ai_chainloop
+            claude_ai_chainloop_docs
+      - ref: file://.chainloop/policies/session-stays-in-one-stage.yaml
+      - ref: file://.chainloop/policies/prd-no-implementation-detail.yaml

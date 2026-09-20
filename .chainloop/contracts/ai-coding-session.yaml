@@ -1,0 +1,42 @@
+# Library contract, to be imported into every organization as an org-level contract once the
+# platform imports this folder.
+#
+# This is the default rendering of the `ai-coding-session` workflow template's inline
+# contract (workflow-templates/ai-coding-session.yaml, spec.contract at its input
+# defaults). Keep the two equivalent: a template-backed workflow only reuses this
+# contract while its own rendering matches it, and falls back to a per-workflow copy
+# otherwise.
+apiVersion: chainloop.dev/v1
+kind: Contract
+metadata:
+  name: chainloop-ai-coding-session
+  description: >-
+    Governs AI coding sessions — the models, tools, messages, and exact lines of code an AI
+    agent produced against a repository. Requires an AI agent to be present, restricts which
+    agents and MCP servers are allowed, and checks the session for dangerous commands and
+    leaked secrets, while verifying the signed commit that triggered it.
+spec:
+  policies:
+    attestation:
+      - ref: source-commit
+        with:
+          check_signature: "yes"
+      - ref: ai-agent-present
+    materials:
+      - ref: ai-config-ai-agents-allowed
+        with:
+          allowed_agents: |
+            claude-code
+            claude
+            cursor
+            opencode
+      - ref: ai-config-no-dangerous-commands
+      - ref: ai-config-no-secrets
+        with:
+          allowed_signed_url_hosts: uploads.linear.app
+      - ref: ai-config-mcp-servers-allowed
+        with:
+          allowed_servers: |
+            claude_ai_chainloop
+            claude_ai_chainloop_docs
+
