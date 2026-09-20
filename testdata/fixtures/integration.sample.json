@@ -1,0 +1,9 @@
+{
+  "_comment": "Sample integration config used by tests. Every credential below is FAKE and non-functional; it exists so the no-secrets policy has something to catch during demos.",
+  "github": {
+    "token": "ghp_1234567890abcdefghijklmnopqrstuvwxyz0000"
+  },
+  "session": {
+    "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZW1vIiwibmFtZSI6InNieC1kZW1vIiwiaWF0IjoxNzAwMDAwMDAwfQ.demo-signature-not-real-0000000000000000"
+  }
+}

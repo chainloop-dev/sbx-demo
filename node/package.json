@@ -1,0 +1,11 @@
+{
+  "name": "svc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tiny operations CLI used to demo AI coding sessions in Docker Sandboxes.",
+  "type": "module",
+  "bin": { "svc": "./bin/svc.js" },
+  "scripts": { "test": "node --test", "status": "node bin/svc.js status" },
+  "engines": { "node": ">=20" },
+  "license": "Apache-2.0"
+}
