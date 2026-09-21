@@ -1,0 +1,44 @@
+apiVersion: workflowcontract.chainloop.dev/v1
+kind: Policy
+metadata:
+  name: tests-were-run
+  description: >-
+    An agent that changed code must have run the test suite in the same session.
+    A diff can show test files changed; only the session shows whether the tests
+    ever executed.
+  annotations:
+    category: ai
+spec:
+  policies:
+    - kind: CHAINLOOP_AI_CODING_SESSION
+      embedded: |
+        package main
+
+        import rego.v1
+
+        default valid_input := false
+
+        valid_input if {
+          input.data.raw_session.main
+        }
+
+        # Every shell command the agent ran, from the transcript.
+        commands contains cmd if {
+          some entry in input.data.raw_session.main
+          entry.type == "assistant"
+          some block in entry.message.content
+          block.type == "tool_use"
+          block.name == "Bash"
+          cmd := block.input.command
+        }
+
+        ran_tests if {
+          some cmd in commands
+          regex.match(`(npm|pnpm|yarn) test|go test|pytest|cargo test`, cmd)
+        }
+
+        violations contains "the agent changed code but never ran the test suite" if {
+          valid_input
+          count(input.data.code_changes.files) > 0
+          not ran_tests
+        }

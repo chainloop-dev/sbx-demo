@@ -43,5 +43,5 @@ spec:
             claude_ai_chainloop
             claude_ai_chainloop_docs
       - ref: file://.chainloop/policies/session-stays-in-one-stage.yaml
-      - ref: file://.chainloop/policies/changes-need-tests.yaml
+      - ref: file://.chainloop/policies/tests-were-run.yaml
       - ref: file://.chainloop/policies/prd-no-implementation-detail.yaml
