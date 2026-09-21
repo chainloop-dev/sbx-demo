@@ -1,0 +1,34 @@
+apiVersion: workflowcontract.chainloop.dev/v1
+kind: Policy
+metadata:
+  name: changes-need-tests
+  description: A session that changes source must also change a test.
+spec:
+  policies:
+    - kind: CHAINLOOP_AI_CODING_SESSION
+      embedded: |
+        package main
+
+        import rego.v1
+
+        default valid_input := false
+
+        valid_input if {
+          input.data.code_changes.files
+        }
+
+        touched_source if {
+          some f in input.data.code_changes.files
+          contains(f.path, "/src/")
+        }
+
+        touched_test if {
+          some f in input.data.code_changes.files
+          contains(f.path, "/test/")
+        }
+
+        violations contains "session changed source without changing a test" if {
+          valid_input
+          touched_source
+          not touched_test
+        }
