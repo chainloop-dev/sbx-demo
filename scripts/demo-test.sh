@@ -72,8 +72,17 @@ sbx rm -f "$name" >/dev/null 2>&1 || true
 [ "$narrate" = 1 ] && printf '\nprompt: %s\n' "$prompt"
 show "sbx run --name $name --kit $SIGN_KIT $KIT . -- -p \"<prompt>\""
 log "launching sandbox (first ever run needs a terminal: approve the credential prompt once)"
-with_timeout 1200 sbx run --name "$name" --kit-args-file .env --kit "$SIGN_KIT" "$KIT" . -- -p "$prompt" \
-  || die "agent run failed or timed out"
+deadline=$((SECONDS + 1200))
+if ! with_timeout 1200 sbx run --name "$name" --kit-args-file .env --kit "$SIGN_KIT" "$KIT" . -- -p "$prompt"; then
+  # sbx run can lose its exec attach ("inspect exec: context deadline exceeded")
+  # while the agent keeps working in the sandbox. Wait for it; step 3 checks the push.
+  log "sbx run exited early; waiting for the agent inside the sandbox"
+  while sbx exec "$name" -- pgrep -f 'claude --dangerously' >/dev/null 2>&1; do
+    [ "$SECONDS" -lt "$deadline" ] || die "agent timed out after 1200s"
+    sleep 10
+  done
+  log "agent finished"
+fi
 
 # ---- 3. assert the agent's work -------------------------------------------
 stage "Check the agent's commit"
