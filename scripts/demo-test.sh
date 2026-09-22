@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Run the whole demo loop unattended and assert the outcome.
 #
-#   scripts/demo-test.sh [--app node|go] [--keep] [--expect-secret]
+#   scripts/demo-test.sh [--app node|go] [--keep] [--expect-secret] [--narrate]
+#
+# --narrate is for presenting: it prints each command before running it, shows
+# its output instead of hiding it, and waits for Enter between stages.
 #
 # Exit 0 only if: the agent branched, built and tested its change, signed and
 # pushed the commit, and Chainloop holds a verified attestation carrying an
@@ -13,11 +16,12 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 . scripts/lib-sbx.sh
 
-app=node; keep=0; expect_secret=0
+app=node; keep=0; expect_secret=0; narrate=0
 while [ $# -gt 0 ]; do case "$1" in
   --app) app="$2"; shift 2;;
   --keep) keep=1; shift;;
   --expect-secret) expect_secret=1; shift;;
+  --narrate) narrate=1; shift;;
   *) echo "unknown flag $1"; exit 2;;
 esac; done
 
@@ -31,6 +35,14 @@ prompt="In $app/, add a --json flag to svc status that prints the report as JSON
 
 log(){ printf '[%s] %s\n' "$(date -u +%T)" "$*"; }
 die(){ printf '[%s] FAIL: %s\n' "$(date -u +%T)" "$*" >&2; exit 1; }
+# Narration helpers; all three are no-ops without --narrate.
+show(){ [ "$narrate" = 1 ] || return 0; printf '\n\033[1;36m$ %s\033[0m\n' "$*"; }
+quiet(){ if [ "$narrate" = 1 ]; then "$@"; else "$@" >/dev/null 2>&1; fi; }
+stage(){
+  [ "$narrate" = 1 ] || return 0
+  [ -t 0 ] && read -rp $'\n\033[2m↵ '"$1"$'\033[0m ' _
+  printf '\n\033[1m== %s\033[0m\n' "$1"
+}
 # macOS has no timeout(1). perl's alarm survives exec and keeps the command in the
 # foreground, so sbx still gets the terminal for its credential prompt.
 with_timeout(){
@@ -55,14 +67,21 @@ log "preflight ok: project=$project app=$app branch=$branch"
 # ---- 2. agent run ----------------------------------------------------------
 # No --clone on purpose: in clone mode origin is a read-only virtiofs mount and
 # the agent's push is rejected with "unable to create temporary object directory".
+stage "Run the agent in a Docker Sandbox"
 sbx rm -f "$name" >/dev/null 2>&1 || true
+[ "$narrate" = 1 ] && printf '\nprompt: %s\n' "$prompt"
+show "sbx run --name $name --kit $SIGN_KIT $KIT . -- -p \"<prompt>\""
 log "launching sandbox (first ever run needs a terminal: approve the credential prompt once)"
 with_timeout 1200 sbx run --name "$name" --kit-args-file .env --kit "$SIGN_KIT" "$KIT" . -- -p "$prompt" \
   || die "agent run failed or timed out"
 
 # ---- 3. assert the agent's work -------------------------------------------
+stage "Check the agent's commit"
+show "git fetch origin $branch"
 git fetch -q origin "$branch" 2>/dev/null || die "branch $branch was never pushed to origin"
 sha=$(git rev-parse "origin/$branch")
+show "git log -1 --show-signature --stat origin/$branch"
+quiet git log -1 --show-signature --stat "$sha"
 sig=$(git log -1 "$sha" --format='%G?')
 [ "$sig" = G ] || [ "$sig" = U ] || die "commit $sha is not signed (git says '%G?'=$sig)"
 log "commit $sha signed ($sig)"
@@ -70,12 +89,20 @@ log "commit $sha signed ($sig)"
 wt=$(mktemp -d); trap 'git worktree remove -f "$wt" 2>/dev/null || true' EXIT
 git worktree add -q "$wt" "origin/$branch"
 case "$app" in
-  node) (cd "$wt/node" && npm test >/dev/null 2>&1 && node bin/svc.js status --json | jq -e '.components|length>0' >/dev/null) || die "node tests or --json output failed";;
-  go)   (cd "$wt/go"   && go test ./... >/dev/null 2>&1 && go run ./cmd/svc status --json | jq -e '.components|length>0' >/dev/null) || die "go tests or --json output failed";;
+  node) test_cmd="npm test";     json_cmd="node bin/svc.js status --json";;
+  go)   test_cmd="go test ./..."; json_cmd="go run ./cmd/svc status --json";;
 esac
+show "cd $app && $test_cmd"
+(cd "$wt/$app" && quiet $test_cmd) || die "$app tests failed"
+show "$json_cmd | jq"
+json=$(cd "$wt/$app" && $json_cmd) || die "$json_cmd failed"
+[ "$narrate" = 1 ] && jq . <<<"$json"
+jq -e '.components|length>0' <<<"$json" >/dev/null || die "--json output has no components"
 log "code ok: tests pass and --json is valid"
 
 # ---- 4. assert the evidence -----------------------------------------------
+stage "Find the attestation in Chainloop"
+show "chainloop workflow run list --project $project -o json"
 log "waiting for the attestation in project $project"
 run_id=""
 for _ in $(seq 1 30); do
@@ -87,7 +114,10 @@ done
 [ -n "$run_id" ] || die "no workflow run newer than $start in project $project"
 log "run $run_id"
 
+show "chainloop workflow run describe --id $run_id -o json"
 desc=$(chainloop workflow run describe --id "$run_id" -o json)
+[ "$narrate" = 1 ] && jq -r '.attestation.policy_evaluations | to_entries[] | .value[]
+  | "\(if (.violations // []) | length > 0 then "✗" else "✓" end)  \(.name)"' <<<"$desc" | sort -u
 [ "$(jq -r '.verified' <<<"$desc")" = true ] || die "attestation signature did not verify"
 
 session_digest=$(jq -r '.attestation.materials[] | select(.type=="CHAINLOOP_AI_CODING_SESSION") | .hash' <<<"$desc")
@@ -113,6 +143,8 @@ att_digest=$(jq -r '.attestation.digest' <<<"$desc")
 chainloop discover --digest "$att_digest" >/dev/null 2>&1 || die "chainloop discover failed for $att_digest"
 
 # ---- 5. attribution, from the session material itself ---------------------
+stage "Read the AI coding session evidence"
+show "chainloop artifact download --digest $session_digest"
 tmp=$(mktemp -d)
 (cd "$tmp" && chainloop artifact download --digest "$session_digest" >/dev/null 2>&1) || die "could not download the session material"
 sess=$(find "$tmp" -name 'chainloop-trace-*.json' | head -1)
