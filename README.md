@@ -46,3 +46,4 @@ In an older shell, `sg kvm -c '<command>'` works without logging out.
 
 **Sandbox commits are not signed.** The sandbox forwards your host SSH agent; it needs a key
 loaded on the host. `ssh-add -l` on the host must list one.
+
