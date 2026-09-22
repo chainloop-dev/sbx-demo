@@ -38,4 +38,4 @@ left=$(git status --porcelain | wc -l)
 sb=$(command -v sbx >/dev/null && sbx ls 2>/dev/null | awk 'NR>1 && $1 ~ /^demo-/' | wc -l || echo 0)
 tok=$( [ -f .env ] && grep -q '^chainloopToken=' .env && echo present || echo MISSING )
 echo "ready: main @ $(git rev-parse --short HEAD), $sb demo sandboxes, token $tok"
-[ "$left" = 0 ] && [ "$sb" = 0 ] && [ "$tok" = present ]
+[ "$left" -eq 0 ] && [ "$sb" -eq 0 ] && [ "$tok" = present ]
