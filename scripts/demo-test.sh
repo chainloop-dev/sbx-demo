@@ -31,6 +31,12 @@ prompt="In $app/, add a --json flag to svc status that prints the report as JSON
 
 log(){ printf '[%s] %s\n' "$(date -u +%T)" "$*"; }
 die(){ printf '[%s] FAIL: %s\n' "$(date -u +%T)" "$*" >&2; exit 1; }
+# macOS has no timeout(1). perl's alarm survives exec and keeps the command in the
+# foreground, so sbx still gets the terminal for its credential prompt.
+with_timeout(){
+  if command -v timeout >/dev/null; then timeout "$@"
+  else perl -e 'alarm shift; exec @ARGV or die "exec $ARGV[0]: $!\n"' "$@"; fi
+}
 
 # ---- 1. preflight ----------------------------------------------------------
 command -v sbx >/dev/null || die "sbx not installed"
@@ -51,7 +57,7 @@ log "preflight ok: project=$project app=$app branch=$branch"
 # the agent's push is rejected with "unable to create temporary object directory".
 sbx rm -f "$name" >/dev/null 2>&1 || true
 log "launching sandbox (first ever run needs a terminal: approve the credential prompt once)"
-timeout 1200 sbx run --name "$name" --kit-args-file .env --kit "$SIGN_KIT" "$KIT" . -- -p "$prompt" \
+with_timeout 1200 sbx run --name "$name" --kit-args-file .env --kit "$SIGN_KIT" "$KIT" . -- -p "$prompt" \
   || die "agent run failed or timed out"
 
 # ---- 3. assert the agent's work -------------------------------------------
