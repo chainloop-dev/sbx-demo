@@ -88,6 +88,10 @@ gh_token=$(gh auth token 2>/dev/null) || die "gh is not logged in: run 'gh auth 
 project=$(awk -F: '/^projectName:/ {gsub(/[ "]/,"",$2); print $2}' .chainloop.yml)
 [ -n "$project" ] || die "projectName missing from .chainloop.yml"
 log "preflight ok: project=$project app=$app branch=$branch"
+# The sandbox shares this checkout, and the agent leaves it on its own branch.
+start_branch=$(git branch --show-current)
+cleanup(){ git worktree remove -f "${wt:-}" 2>/dev/null || true; git checkout -q "$start_branch" 2>/dev/null || true; }
+trap cleanup EXIT
 
 # ---- 2. agent run ----------------------------------------------------------
 # No --clone on purpose: in clone mode origin is a read-only virtiofs mount and
@@ -131,7 +135,7 @@ sig=$(git log -1 "$sha" --format='%G?')
 [ "$sig" = G ] || [ "$sig" = U ] || die "commit $sha is not signed (git says '%G?'=$sig)"
 log "commit $sha signed ($sig)"
 
-wt=$(mktemp -d); trap 'git worktree remove -f "$wt" 2>/dev/null || true' EXIT
+wt=$(mktemp -d)
 git worktree add -q "$wt" "origin/$branch"
 case "$app" in
   node) test_cmd="npm test";     json_cmd="node bin/svc.js status --json";;
