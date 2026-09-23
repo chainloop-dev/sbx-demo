@@ -163,12 +163,16 @@ log "PR $pr_url references #$issue"
 
 show "gh pr checks $branch"
 checks=""
+# Until PR Validation has run, GitHub shows it NEUTRAL with a placeholder link, so
+# "done" means every check has settled and PR Validation links to its workflow run.
+settled='length > 0 and all(.state != "PENDING" and .state != "QUEUED" and .state != "IN_PROGRESS")
+  and all(select(.name == "Chainloop PR Validation") | .link | test("/workflow-runs/"))'
 for _ in $(seq 1 30); do
   checks=$(gh pr checks "$branch" --json name,state,link 2>/dev/null || true)
-  [ -n "$checks" ] && jq -e 'length > 0 and all(.state != "PENDING" and .state != "QUEUED" and .state != "IN_PROGRESS")' <<<"$checks" >/dev/null && break
+  [ -n "$checks" ] && jq -e "$settled" <<<"$checks" >/dev/null && break
   sleep 10
 done
-[ -n "$checks" ] || die "no checks reported on $pr_url"
+[ -n "$checks" ] && jq -e "$settled" <<<"$checks" >/dev/null || die "PR checks did not finish within 5 minutes on $pr_url"
 [ "$narrate" = 1 ] && jq -r '.[] | "\(if .state == "SUCCESS" then "✓" else "✗" end)  \(.name)"' <<<"$checks"
 # The only failure allowed is the approval rule inside PR Validation: a human's job.
 jq -r '.[] | select(.state != "SUCCESS") | "\(.name)\t\(.link)"' <<<"$checks" | while IFS=$'\t' read -r check link; do
