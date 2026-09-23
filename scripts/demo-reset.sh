@@ -29,6 +29,13 @@ if git remote get-url origin >/dev/null 2>&1; then
   done
 fi
 
+# Deleting a demo-* branch closes its PR; the issues demo-test.sh opened need closing.
+if command -v gh >/dev/null; then
+  for n in $(env -u GITHUB_TOKEN gh issue list --label demo-test --state open --json number -q '.[].number' 2>/dev/null); do
+    echo "closing issue #$n"; env -u GITHUB_TOKEN gh issue close "$n" -r "not planned" >/dev/null
+  done
+fi
+
 # 3. working tree, keeping the token
 git clean -fdxq -e .env
 git checkout -q -- .

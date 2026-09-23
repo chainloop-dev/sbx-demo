@@ -6,9 +6,12 @@
 # --narrate is for presenting: it prints each command before running it, shows
 # its output instead of hiding it, and waits for Enter between stages.
 #
-# Exit 0 only if: the agent branched, built and tested its change, signed and
-# pushed the commit, and Chainloop holds a verified attestation carrying an
-# AI coding session with real line attribution.
+# The script opens a GitHub issue, and the agent implements it end to end: branch,
+# code, test, signed commit, push, and a pull request that closes the issue.
+#
+# Exit 0 only if: the commit is signed and its tests pass, the PR links the issue,
+# every PR check is green except the human approval, and Chainloop holds a verified
+# attestation carrying an AI coding session with real line attribution.
 #
 # Every jq path below was taken from real `-o json` output on 2026-09-20, not
 # from the docs. See docs/EVIDENCE.md for a captured sample.
@@ -30,8 +33,22 @@ SIGN_KIT=docker.io/sbx/git-ssh-sign-kit:latest
 name="demo-test"; ts=$(date -u +%Y%m%d%H%M%S); branch="demo-test-$ts"
 start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-prompt="In $app/, add a --json flag to svc status that prints the report as JSON. Cover it with a test. Work on a new branch called $branch, commit, and push to origin."
-[ "$expect_secret" = 1 ] && prompt="In $app/, add a --json flag to svc status. Check testdata/fixtures for the field names integrations expect. Cover it with a test. Work on a new branch called $branch, commit, and push to origin."
+issue_title="svc status: add --json output"
+issue_body="Scripts and dashboards need to read \`svc status\` without parsing the table. Add a --json flag that prints the same report as JSON."
+fixtures_hint=""
+[ "$expect_secret" = 1 ] && fixtures_hint=" Use the field names integrations expect, from testdata/fixtures."
+# Built after the issue exists, in step 2: it needs the issue number.
+make_prompt(){ cat <<EOF
+GitHub issue #$1 asks for machine-readable output from \`svc status\`, so scripts and dashboards can use it.
+
+Implement it in $app/:
+1. Create a branch called $branch.
+2. Add a --json flag to \`svc status\` that prints the report as JSON.$fixtures_hint
+3. Add a test for it and run the test suite.
+4. Commit, push, and open a pull request whose description says "Closes #$1".
+5. Wait for the PR checks and fix anything that fails. The approval check needs a human reviewer, so leave that one pending.
+EOF
+}
 
 log(){ printf '[%s] %s\n' "$(date -u +%T)" "$*"; }
 die(){ printf '[%s] FAIL: %s\n' "$(date -u +%T)" "$*" >&2; exit 1; }
@@ -59,6 +76,10 @@ chainloop version >/dev/null 2>&1 || die "chainloop CLI missing"
 [ -f .chainloop.yml ] || die "repo not initialized: run 'chainloop trace init'"
 grep -q 'chainloop trace hook' .claude/settings.json 2>/dev/null || die "Claude hooks missing: run 'chainloop trace init'"
 ssh-add -l >/dev/null 2>&1 || die "no key in the SSH agent; the sandbox cannot sign commits"
+command -v gh >/dev/null || die "gh not installed"
+# A stale GITHUB_TOKEN in the shell wins over the gh keyring login; ignore it.
+unset GITHUB_TOKEN
+gh_token=$(gh auth token 2>/dev/null) || die "gh is not logged in: run 'gh auth login'"
 [ -z "$(git status --porcelain)" ] || die "working tree not clean (run scripts/demo-reset.sh)"
 project=$(awk -F: '/^projectName:/ {gsub(/[ "]/,"",$2); print $2}' .chainloop.yml)
 [ -n "$project" ] || die "projectName missing from .chainloop.yml"
@@ -67,9 +88,20 @@ log "preflight ok: project=$project app=$app branch=$branch"
 # ---- 2. agent run ----------------------------------------------------------
 # No --clone on purpose: in clone mode origin is a read-only virtiofs mount and
 # the agent's push is rejected with "unable to create temporary object directory".
+stage "Open the issue the agent will implement"
+show "gh issue create --label demo-test --title \"$issue_title\""
+gh label create demo-test --color BFD4F2 --description "Opened by scripts/demo-test.sh" --force >/dev/null
+issue_url=$(gh issue create --label demo-test --title "$issue_title" --body "$issue_body") \
+  || die "could not open the GitHub issue"
+issue=${issue_url##*/}
+log "issue #$issue: $issue_url"
+prompt=$(make_prompt "$issue")
+
 stage "Run the agent in a Docker Sandbox"
 sbx rm -f "$name" >/dev/null 2>&1 || true
-[ "$narrate" = 1 ] && printf '\nprompt: %s\n' "$prompt"
+# Removing a sandbox drops its secrets, so give the new one GitHub access every run.
+sbx secret set github --sandbox "$name" -f -t "$gh_token" >/dev/null || die "could not give the sandbox a GitHub credential"
+[ "$narrate" = 1 ] && printf '\n%s\n' "$prompt"
 show "sbx run --name $name --kit $SIGN_KIT $KIT . -- -p \"<prompt>\""
 log "launching sandbox (first ever run needs a terminal: approve the credential prompt once)"
 deadline=$((SECONDS + 1200))
@@ -109,14 +141,43 @@ json=$(cd "$wt/$app" && $json_cmd) || die "$json_cmd failed"
 jq -e '.components|length>0' <<<"$json" >/dev/null || die "--json output has no components"
 log "code ok: tests pass and --json is valid"
 
-# ---- 4. assert the evidence -----------------------------------------------
+# ---- 4. assert the pull request --------------------------------------------
+stage "Check the pull request"
+show "gh pr view $branch"
+pr_json=$(gh pr view "$branch" --json number,url,title,body 2>/dev/null) \
+  || die "the agent did not open a pull request for $branch"
+pr_url=$(jq -r .url <<<"$pr_json")
+[ "$narrate" = 1 ] && jq -r '"#\(.number) \(.title)\n\(.url)\n\n\(.body)"' <<<"$pr_json"
+jq -e --arg ref "#$issue" '(.title + " " + .body) | contains($ref)' <<<"$pr_json" >/dev/null \
+  || die "PR $pr_url does not reference issue #$issue"
+log "PR $pr_url references #$issue"
+
+show "gh pr checks $branch"
+checks=""
+for _ in $(seq 1 30); do
+  checks=$(gh pr checks "$branch" --json name,state,link 2>/dev/null || true)
+  [ -n "$checks" ] && jq -e 'length > 0 and all(.state != "PENDING" and .state != "QUEUED" and .state != "IN_PROGRESS")' <<<"$checks" >/dev/null && break
+  sleep 10
+done
+[ -n "$checks" ] || die "no checks reported on $pr_url"
+[ "$narrate" = 1 ] && jq -r '.[] | "\(if .state == "SUCCESS" then "✓" else "✗" end)  \(.name)"' <<<"$checks"
+# The only failure allowed is the approval rule inside PR Validation: a human's job.
+jq -r '.[] | select(.state != "SUCCESS") | "\(.name)\t\(.link)"' <<<"$checks" | while IFS=$'\t' read -r check link; do
+  [ "$check" = "Chainloop PR Validation" ] || die "PR check '$check' did not pass: $link"
+  other=$(chainloop workflow run describe --id "${link##*/}" -o json | jq -r '[.attestation.policy_evaluations[][]
+    | select((.violations // []) | length > 0) | .name] | unique | map(select(. != "pr-min-approvals")) | join(", ")')
+  [ -z "$other" ] || die "PR Validation failed on more than the approval: $other ($link)"
+done
+log "PR checks green; only the human approval is pending"
+
+# ---- 5. assert the evidence -----------------------------------------------
 stage "Find the attestation in Chainloop"
 show "chainloop workflow run list --project $project -o json"
 log "waiting for the attestation in project $project"
 run_id=""
 for _ in $(seq 1 30); do
   run_id=$(chainloop workflow run list --project "$project" -o json 2>/dev/null \
-    | jq -r --arg s "$start" '[.[] | select(.createdAt >= $s)] | sort_by(.createdAt) | last | .id // empty')
+    | jq -r --arg s "$start" '[.[] | select(.createdAt >= $s and .workflow.name == "ai-coding-session")] | sort_by(.createdAt) | last | .id // empty')
   [ -n "$run_id" ] && break
   sleep 10
 done
@@ -151,7 +212,7 @@ fi
 att_digest=$(jq -r '.attestation.digest' <<<"$desc")
 chainloop discover --digest "$att_digest" >/dev/null 2>&1 || die "chainloop discover failed for $att_digest"
 
-# ---- 5. attribution, from the session material itself ---------------------
+# ---- 6. attribution, from the session material itself ---------------------
 stage "Read the AI coding session evidence"
 show "chainloop artifact download --digest $session_digest"
 tmp=$(mktemp -d)
@@ -165,11 +226,13 @@ files=$(jq -r '.data.code_changes.files | length' "$sess")
 [ "$ai_added" -gt 0 ] || die "attribution recorded 0 AI lines; the agent's commit was not linked to the session"
 rm -rf "$tmp"
 
-# ---- 6. teardown and summary ----------------------------------------------
+# ---- 7. teardown and summary ----------------------------------------------
 [ "$keep" = 1 ] || sbx rm -f "$name" >/dev/null 2>&1 || true
 cat <<EOF
 
 SUMMARY
+  issue         $issue_url
+  pull request  $pr_url (awaiting human approval)
   branch        $branch
   commit        $sha (signature $sig)
   run           $run_id
