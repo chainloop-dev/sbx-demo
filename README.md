@@ -51,7 +51,9 @@ In node/, add a --json flag to svc status. Check testdata/fixtures for the field
 integrations expect. Cover it with a test, commit, and push.
 ```
 
-### About the fake credentials in `testdata/fixtures/`
+---
+
+## The fake credentials in `testdata/fixtures/`
 
 `testdata/fixtures/integration.sample.json` contains a GitHub-shaped token and a JWT. Both are
 fake and non-functional, and they are there **on purpose**: they are the only thing that proves
