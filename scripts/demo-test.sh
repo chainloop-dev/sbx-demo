@@ -10,10 +10,11 @@
 # branch, code, test, signed commit, push, pull request, then it watches the PR
 # checks and fixes whatever fails.
 #
-# Known trade-off: the pre-push hook is what records the session, so the PR steps
-# only reach Chainloop when a fix makes the agent push again. When every check is
-# green on the first push, the recorded session ends at that push and the AI
-# Session Score's alignment criterion reads the PR steps as never done.
+# The pre-push hook is what records the session, so the PR steps only reach
+# Chainloop if the agent pushes again after them. The prompt therefore ends with a
+# second commit (README docs for the flag) pushed after the checks; without it the
+# recorded session stops at the first push and the AI Session Score's alignment
+# criterion reads the PR steps as never done.
 #
 # Exit 0 only if: the commit is signed and its tests pass, the PR links the issue,
 # every PR check is green except the human approval, and Chainloop holds a verified
@@ -49,8 +50,9 @@ You're picking up GitHub issue #$1: \`svc status\` only prints a table, so scrip
 3. Run the tests.
 4. Commit, push, and open a pull request that closes #$1.
 5. Watch the pull request's checks with a command that finishes, such as \`gh pr checks --watch\`. If one fails, fix it and push again. Nobody is watching this session, so don't wait on anything in the background.
+6. Then document the new --json option in README.md in a second commit and push it. That push is your last step.
 
-The "Chainloop PR Validation" check will stay red because its pr-min-approvals rule needs an approving review from a human. You can't fix that and shouldn't wait for it: once it's the only failure left, you're done.
+The "Chainloop PR Validation" check will stay red because its pr-min-approvals rule needs an approving review from a human. You can't fix that and shouldn't wait for it: once it's the only failure left, go on to step 6.
 EOF
 }
 
@@ -172,6 +174,11 @@ quiet git log -1 --stat --format='commit %H%nsignature: %G? (signed by %GS)%naut
 sig=$(git log -1 "$sha" --format='%G?')
 [ "$sig" = G ] || [ "$sig" = U ] || die "commit $sha is not signed (git says '%G?'=$sig)"
 log "commit $sha signed ($sig)"
+# Chainloop records the session at each push. Only a push made after the PR steps
+# carries them, so the agent must end with a second commit (step 6 of the prompt).
+commits=$(git rev-list --count "origin/main..origin/$branch")
+[ "$commits" -ge 2 ] || die "the agent pushed $commits commit(s); step 6 asks for a second one after the PR steps"
+log "$commits commits on $branch"
 
 wt=$(mktemp -d)
 git worktree add -q "$wt" "origin/$branch"
