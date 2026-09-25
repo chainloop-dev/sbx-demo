@@ -124,22 +124,12 @@ Always build and test before reporting a change as done.
 
 ---
 
-## Repository layout
-
-```
-node/                  the svc CLI in JavaScript (bin/, src/, test/)
-go/                    the same CLI in Go (cmd/, internal/)
-docs/prds/             intent: why a feature exists
-docs/specs/            design: flags, behaviour, exit codes, what to test (written by stage 2)
-.chainloop/contracts/  what a session must produce to be accepted
-.chainloop/policies/   the rules a session is judged against
-scripts/               demo automation (see below)
-```
+## Demo scripts
 
 | Script | What it does |
 |---|---|
 | `scripts/demo-reset.sh` | Back to a clean state: removes `demo-*` sandboxes and branches, cleans the tree. `--hard` also drops the persistent `~/.claude` volumes for a true first-run experience. |
-| `scripts/demo-test.sh` | Runs the whole loop unattended, with assertions: opens an issue, lets the agent implement it, opens the PR, waits for checks. `--narrate` makes it presentation-friendly. |
+| `scripts/demo-test.sh` | Runs the whole loop unattended, with assertions: opens an issue, and the agent implements it, opens the PR and works through its checks. `--narrate` makes it presentation-friendly: it shows each command, the agent's steps live, and pauses between stages. |
 
 ---
 
