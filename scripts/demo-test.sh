@@ -202,6 +202,10 @@ desc=$(chainloop workflow run describe --id "$run_id" -o json)
 # An auto-created workflow gets an empty contract, so nothing is evaluated.
 jq -e '.attestation.policy_evaluations // {} | length > 0' <<<"$desc" >/dev/null \
   || die "no policies were evaluated on run $run_id: point workflow ai-coding-session in project $project at contract sbx-demo-ai-coding-session (chainloop workflow update --contract)"
+[ "$narrate" = 1 ] && jq -r '"signature verified: \(.verified)",
+  "attestation:        \(.attestation.digest)",
+  (.attestation.policy_evaluation_status | "policies:           \(.passed)/\(.total) passed, \(.violated) violated"),
+  "evidence:", (.attestation.materials[] | "  \(.type)  \(.name)"), ""' <<<"$desc"
 [ "$narrate" = 1 ] && jq -r '.attestation.policy_evaluations | to_entries[] | .value[]
   | "\(if (.violations // []) | length > 0 then "✗" else "✓" end)  \(.name)"' <<<"$desc" | sort -u
 [ "$(jq -r '.verified' <<<"$desc")" = true ] || die "attestation signature did not verify"
@@ -221,7 +225,19 @@ commit_violations=$(jq -r '[.attestation.policy_evaluations | to_entries[] | .va
 [ "$secret_violations" = 0 ] || die "ai-config-no-secrets fired on the session"
 
 att_digest=$(jq -r '.attestation.digest' <<<"$desc")
-chainloop discover --digest "$att_digest" >/dev/null 2>&1 || die "chainloop discover failed for $att_digest"
+
+# Provenance, walked backwards: from the commit on the PR to the evidence about it.
+stage "Trace the commit back to its evidence"
+show "chainloop discover --digest sha1:$sha"
+from_commit=$(chainloop discover --digest "sha1:$sha" 2>/dev/null) || die "chainloop discover failed for commit $sha"
+[ "$narrate" = 1 ] && jq -r '.result.references[] | "  ← \(.kind)  \(.metadata.name // "")  (project \(.metadata.project // "?"))  \(.digest)"' <<<"$from_commit"
+jq -e --arg d "$att_digest" '[.result.references[].digest] | index($d) != null' <<<"$from_commit" >/dev/null \
+  || die "commit $sha does not lead back to attestation $att_digest"
+show "chainloop discover --digest $att_digest"
+from_att=$(chainloop discover --digest "$att_digest" 2>/dev/null) || die "chainloop discover failed for $att_digest"
+[ "$narrate" = 1 ] && jq -r '.result | "checked against contract \(.metadata.contractName) (revision \(.metadata.contractVersion))",
+  (.references[] | "  → \(.kind)  \(.digest)")' <<<"$from_att"
+log "commit ${sha:0:7} leads back to its attestation"
 
 # ---- 6. attribution, from the session material itself ---------------------
 stage "Read the AI coding session evidence"
