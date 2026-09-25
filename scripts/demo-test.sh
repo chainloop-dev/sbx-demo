@@ -48,7 +48,7 @@ You're picking up GitHub issue #$1: \`svc status\` only prints a table, so scrip
 2. Make the change in $app/ and add a test for it.
 3. Run the tests.
 4. Commit, push, and open a pull request that closes #$1.
-5. Watch the pull request's checks. If one fails, fix it and push again.
+5. Watch the pull request's checks with a command that finishes, such as \`gh pr checks --watch\`. If one fails, fix it and push again. Nobody is watching this session, so don't wait on anything in the background.
 
 The "Chainloop PR Validation" check will stay red because its pr-min-approvals rule needs an approving review from a human. You can't fix that and shouldn't wait for it: once it's the only failure left, you're done.
 EOF
@@ -59,6 +59,10 @@ die(){ printf '[%s] FAIL: %s\n' "$(date -u +%T)" "$*" >&2; exit 1; }
 # Narration helpers; all three are no-ops without --narrate.
 show(){ [ "$narrate" = 1 ] || return 0; printf '\n\033[1;36m$ %s\033[0m\n' "$*"; }
 quiet(){ if [ "$narrate" = 1 ]; then "$@"; else "$@" >/dev/null 2>&1; fi; }
+# Show "<command> | jq -r '<filter>'" and print exactly what that pipeline prints,
+# from JSON the script already fetched, so the screen never shows a command whose
+# output was secretly reshaped.
+show_jq(){ [ "$narrate" = 1 ] || return 0; show "$1 | jq -r '$2'"; jq -r "$2" <<<"$3"; }
 stage(){
   [ "$narrate" = 1 ] || return 0
   [ -t 0 ] && read -rp $'\n\033[2m↵ '"$1"$'\033[0m ' _
@@ -84,8 +88,9 @@ stream_agent(){
   | jq -r --unbuffered 'select(.type == "assistant") | .message.content[]?
       | if .type == "tool_use" then "  \u001b[36m▶ \(.name)\u001b[0m \(.input.command // .input.file_path // .input.pattern // "" | tostring | gsub("\n"; " ") | .[0:150])"
         elif .type == "text" then "  \u001b[33m💬\u001b[0m \(.text | gsub("\n"; " ") | .[0:300])"
-        else empty end'
+        else empty end | . + "\r"'
 }
+tty_sane(){ [ "$narrate" = 1 ] && { stty sane </dev/tty; } 2>/dev/null || true; }
 streamer=""
 stop_stream(){
   [ -n "$streamer" ] || return 0
@@ -120,7 +125,7 @@ trap cleanup EXIT
 # No --clone on purpose: in clone mode origin is a read-only virtiofs mount and
 # the agent's push is rejected with "unable to create temporary object directory".
 stage "Open the issue the agent will implement"
-show "gh issue create --label demo-test --title \"$issue_title\""
+show "gh issue create --label demo-test --title \"$issue_title\" --body \"$issue_body\""
 gh label create demo-test --color BFD4F2 --description "Opened by scripts/demo-test.sh" --force >/dev/null
 issue_url=$(gh issue create --label demo-test --title "$issue_title" --body "$issue_body") \
   || die "could not open the GitHub issue"
@@ -129,15 +134,20 @@ log "issue #$issue: $issue_url"
 prompt=$(make_prompt "$issue")
 
 stage "Run the agent in a Docker Sandbox"
+if [ "$narrate" = 1 ]; then
+  printf '\n\033[1mThe prompt the agent gets:\033[0m\n\n'
+  sed $'s/^/  \033[35m│\033[0m /' <<<"$prompt"
+  echo
+fi
 sbx rm -f "$name" >/dev/null 2>&1 || true
 # Removing a sandbox drops its secrets, so give the new one GitHub access every run.
 sbx secret set github --sandbox "$name" -f -t "$gh_token" >/dev/null || die "could not give the sandbox a GitHub credential"
-[ "$narrate" = 1 ] && printf '\n%s\n' "$prompt"
-show "sbx run --name $name --kit $SIGN_KIT $KIT . -- -p \"<prompt>\""
+show "sbx run --name $name --kit-args-file .env --kit $SIGN_KIT $KIT . -- -p \"<the prompt above>\" --disallowedTools Monitor"
 log "launching sandbox (first ever run needs a terminal: approve the credential prompt once)"
 deadline=$((SECONDS + 1200))
 if [ "$narrate" = 1 ]; then stream_agent "$(( $(date +%s) - 5 ))" & streamer=$!; fi
-if ! with_timeout 1200 sbx run --name "$name" --kit-args-file .env --kit "$SIGN_KIT" "$KIT" . -- -p "$prompt"; then
+if ! with_timeout 1200 sbx run --name "$name" --kit-args-file .env --kit "$SIGN_KIT" "$KIT" . -- -p "$prompt" --disallowedTools Monitor; then
+  tty_sane
   # sbx run can lose its exec attach ("inspect exec: context deadline exceeded")
   # while the agent keeps working in the sandbox. Wait for it; step 3 checks the push.
   log "sbx run exited early; waiting for the agent inside the sandbox"
@@ -148,6 +158,7 @@ if ! with_timeout 1200 sbx run --name "$name" --kit-args-file .env --kit "$SIGN_
   log "agent finished"
 fi
 stop_stream
+tty_sane
 
 # ---- 3. assert the agent's work -------------------------------------------
 stage "Check the agent's commit"
@@ -156,8 +167,8 @@ git fetch -q origin "$branch" 2>/dev/null || die "branch $branch was never pushe
 sha=$(git rev-parse "origin/$branch")
 # %G?/%GS instead of --show-signature: that one prints the key fingerprint, which
 # ai-config-no-secrets flags as an API key whenever it lands in a recorded session.
-show "git log -1 --stat origin/$branch"
-quiet git log -1 --stat --format='commit %H%nsignature: %G? (signed by %GS)%nauthor: %an <%ae>%n%n%B' "$sha"
+show "git log -1 --stat --format='commit %H%nsignature: %G? (signed by %GS)%nauthor: %an <%ae>%n%n%B' origin/$branch"
+quiet git log -1 --stat --format='commit %H%nsignature: %G? (signed by %GS)%nauthor: %an <%ae>%n%n%B' "origin/$branch"
 sig=$(git log -1 "$sha" --format='%G?')
 [ "$sig" = G ] || [ "$sig" = U ] || die "commit $sha is not signed (git says '%G?'=$sig)"
 log "commit $sha signed ($sig)"
@@ -178,16 +189,16 @@ log "code ok: tests pass and --json is valid"
 
 # ---- 4. check the agent's pull request --------------------------------------
 stage "Check the pull request the agent opened"
-show "gh pr view $branch"
 pr_json=$(gh pr view "$branch" --json number,url,title,body 2>/dev/null) \
   || die "the agent did not open a pull request for $branch"
 pr_url=$(jq -r .url <<<"$pr_json")
-[ "$narrate" = 1 ] && jq -r '"#\(.number) \(.title)\n\(.url)\n\n\(.body)"' <<<"$pr_json"
+show "gh pr view $branch"
+[ "$narrate" = 1 ] && gh pr view "$branch"
 jq -e --arg ref "#$issue" '(.title + " " + .body) | contains($ref)' <<<"$pr_json" >/dev/null \
   || die "PR $pr_url does not reference issue #$issue"
 log "PR $pr_url references #$issue"
 
-show "gh pr checks $branch"
+log "waiting for the PR checks to finish"
 checks=""
 # Until PR Validation has run, GitHub shows it NEUTRAL with a placeholder link, so
 # "done" means every check has settled and PR Validation links to its workflow run.
@@ -199,7 +210,8 @@ for _ in $(seq 1 30); do
   sleep 10
 done
 [ -n "$checks" ] && jq -e "$settled" <<<"$checks" >/dev/null || die "PR checks did not finish within 5 minutes on $pr_url"
-[ "$narrate" = 1 ] && jq -r '.[] | "\(if .state == "SUCCESS" then "✓" else "✗" end)  \(.name)"' <<<"$checks"
+show "gh pr checks $branch"
+[ "$narrate" = 1 ] && { gh pr checks "$branch" || true; }
 # The only failure allowed is the approval rule inside PR Validation: a human's job.
 jq -r '.[] | select(.state != "SUCCESS") | "\(.name)\t\(.link)"' <<<"$checks" | while IFS=$'\t' read -r check link; do
   [ "$check" = "Chainloop PR Validation" ] || die "PR check '$check' did not pass: $link"
@@ -211,29 +223,26 @@ log "PR checks green; only the human approval is pending"
 
 # ---- 5. assert the evidence -----------------------------------------------
 stage "Find the attestation in Chainloop"
-show "chainloop workflow run list --project $project -o json"
 log "waiting for the attestation in project $project"
-run_id=""
+run_id=""; runs=""
+pick_run='[.[] | select(.createdAt >= "'"$start"'" and .workflow.name == "ai-coding-session")] | sort_by(.createdAt) | last'
 for _ in $(seq 1 30); do
-  run_id=$(chainloop workflow run list --project "$project" -o json 2>/dev/null \
-    | jq -r --arg s "$start" '[.[] | select(.createdAt >= $s and .workflow.name == "ai-coding-session")] | sort_by(.createdAt) | last | .id // empty')
+  runs=$(chainloop workflow run list --project "$project" -o json 2>/dev/null || true)
+  run_id=$(jq -r "$pick_run | .id // empty" <<<"${runs:-[]}")
   [ -n "$run_id" ] && break
   sleep 10
 done
 [ -n "$run_id" ] || die "no workflow run newer than $start in project $project"
-log "run $run_id"
+show_jq "chainloop workflow run list --project $project -o json" "$pick_run"' | "\(.id) \(.workflow.name) \(.policyStatus)"' "$runs"
 
-show "chainloop workflow run describe --id $run_id -o json"
 desc=$(chainloop workflow run describe --id "$run_id" -o json)
 # An auto-created workflow gets an empty contract, so nothing is evaluated.
 jq -e '.attestation.policy_evaluations // {} | length > 0' <<<"$desc" >/dev/null \
   || die "no policies were evaluated on run $run_id: point workflow ai-coding-session in project $project at contract sbx-demo-ai-coding-session (chainloop workflow update --contract)"
-[ "$narrate" = 1 ] && jq -r '"signature verified: \(.verified)",
-  "attestation:        \(.attestation.digest)",
-  (.attestation.policy_evaluation_status | "policies:           \(.passed)/\(.total) passed, \(.violated) violated"),
-  "evidence:", (.attestation.materials[] | "  \(.type)  \(.name)"), ""' <<<"$desc"
-[ "$narrate" = 1 ] && jq -r '.attestation.policy_evaluations | to_entries[] | .value[]
-  | "\(if (.violations // []) | length > 0 then "✗" else "✓" end)  \(.name)"' <<<"$desc" | sort -u
+show_jq "chainloop workflow run describe --id $run_id -o json" \
+  '"verified: \(.verified)", "attestation: \(.attestation.digest)", (.attestation.policy_evaluation_status | "policies: \(.passed)/\(.total) passed, \(.violated) violated"), (.attestation.materials[] | "evidence: \(.type) \(.name)")' "$desc"
+show_jq "chainloop workflow run describe --id $run_id -o json" \
+  '[.attestation.policy_evaluations[][] | "\(if (.violations // []) | length > 0 then "✗" else "✓" end) \(.name)"] | unique | .[]' "$desc"
 [ "$(jq -r '.verified' <<<"$desc")" = true ] || die "attestation signature did not verify"
 
 session_digest=$(jq -r '.attestation.materials[] | select(.type=="CHAINLOOP_AI_CODING_SESSION") | .hash' <<<"$desc")
@@ -254,15 +263,14 @@ att_digest=$(jq -r '.attestation.digest' <<<"$desc")
 
 # Provenance, walked backwards: from the commit on the PR to the evidence about it.
 stage "Trace the commit back to its evidence"
-show "chainloop discover --digest sha1:$sha"
 from_commit=$(chainloop discover --digest "sha1:$sha" 2>/dev/null) || die "chainloop discover failed for commit $sha"
-[ "$narrate" = 1 ] && jq -r '.result.references[] | "  ← \(.kind)  \(.metadata.name // "")  (project \(.metadata.project // "?"))  \(.digest)"' <<<"$from_commit"
+show_jq "chainloop discover --digest sha1:$sha" \
+  '.result.references[] | "← \(.kind) \(.metadata.name) (project \(.metadata.project)) \(.digest)"' "$from_commit"
 jq -e --arg d "$att_digest" '[.result.references[].digest] | index($d) != null' <<<"$from_commit" >/dev/null \
   || die "commit $sha does not lead back to attestation $att_digest"
-show "chainloop discover --digest $att_digest"
 from_att=$(chainloop discover --digest "$att_digest" 2>/dev/null) || die "chainloop discover failed for $att_digest"
-[ "$narrate" = 1 ] && jq -r '.result | "checked against contract \(.metadata.contractName) (revision \(.metadata.contractVersion))",
-  (.references[] | "  → \(.kind)  \(.digest)")' <<<"$from_att"
+show_jq "chainloop discover --digest $att_digest" \
+  '.result | "contract: \(.metadata.contractName) revision \(.metadata.contractVersion)", (.references[] | "→ \(.kind) \(.digest)")' "$from_att"
 log "commit ${sha:0:7} leads back to its attestation"
 
 # ---- 6. attribution, from the session material itself ---------------------
