@@ -31,7 +31,7 @@ against the contract in `.chainloop/contracts/`. After you push, check that your
 work passed:
 
 ```bash
-chainloop workflow run list --project sbx-demo -o json | jq -r '.[0] | "\(.policyStatus) \(.id)"'
+chainloop workflow run list --project ai-sessions-demo -o json | jq -r '.[0] | "\(.policyStatus) \(.id)"'
 ```
 
 If the policy status is not `passed`, read the violations and fix them in this same
