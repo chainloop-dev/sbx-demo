@@ -85,6 +85,7 @@ gh_token=$(gh auth token 2>/dev/null) || die "gh is not logged in: run 'gh auth 
 [ -z "$(git status --porcelain)" ] || die "working tree not clean (run scripts/demo-reset.sh)"
 project=$(awk -F: '/^projectName:/ {gsub(/[ "]/,"",$2); print $2}' .chainloop.yml)
 [ -n "$project" ] || die "projectName missing from .chainloop.yml"
+org=$(awk -F: '/^organization:/ {gsub(/[ "]/,"",$2); print $2}' .chainloop.yml)
 log "preflight ok: project=$project app=$app branch=$branch"
 # The sandbox shares this checkout, and the agent leaves it on its own branch.
 start_branch=$(git branch --show-current)
@@ -252,5 +253,5 @@ SUMMARY
   model         $model
   attribution   $ai_added AI lines across $files files
   est. cost     \$$cost
-  view          https://app.chainloop.dev/u/$project/workflow-runs/$att_digest
+  view          https://app.chainloop.dev/u/${org:-$project}/workflow-runs/$att_digest
 EOF
