@@ -129,8 +129,10 @@ stage "Check the agent's commit"
 show "git fetch origin $branch"
 git fetch -q origin "$branch" 2>/dev/null || die "branch $branch was never pushed to origin"
 sha=$(git rev-parse "origin/$branch")
-show "git log -1 --show-signature --stat origin/$branch"
-quiet git log -1 --show-signature --stat "$sha"
+# %G?/%GS instead of --show-signature: that one prints the key fingerprint, which
+# ai-config-no-secrets flags as an API key whenever it lands in a recorded session.
+show "git log -1 --stat origin/$branch"
+quiet git log -1 --stat --format='commit %H%nsignature: %G? (signed by %GS)%nauthor: %an <%ae>%n%n%B' "$sha"
 sig=$(git log -1 "$sha" --format='%G?')
 [ "$sig" = G ] || [ "$sig" = U ] || die "commit $sha is not signed (git says '%G?'=$sig)"
 log "commit $sha signed ($sig)"
