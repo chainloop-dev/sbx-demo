@@ -107,6 +107,21 @@ queue      ok     8ms      depth 0
 
 Exit codes: `0` all components healthy, `1` at least one failing, `2` unknown command.
 
+Pass `--json` (Node only, for now) to print the same report as JSON instead of the table,
+so scripts can parse it:
+
+```
+$ svc status --json
+{
+  "checkedAt": "2026-09-24T09:15:00.000Z",
+  "components": [
+    { "name": "api", "ok": true, "latencyMs": 12, "detail": "200 OK" },
+    { "name": "database", "ok": true, "latencyMs": 3, "detail": "connections 4/50" },
+    { "name": "queue", "ok": true, "latencyMs": 8, "detail": "depth 0" }
+  ]
+}
+```
+
 The same CLI is implemented twice, once in Node and once in Go. **Pick one and work only in
 it** — a task names the language it wants.
 
