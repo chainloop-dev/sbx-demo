@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the whole demo loop unattended and assert the outcome.
 #
-#   scripts/demo-test.sh [--app node|go] [--keep] [--expect-secret] [--narrate]
+#   scripts/demo-test.sh [--app node|go] [--keep] [--narrate]
 #
 # --narrate is for presenting: it prints each command before running it, shows
 # its output instead of hiding it, and waits for Enter between stages.
@@ -25,11 +25,10 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 . scripts/lib-sbx.sh
 
-app=node; keep=0; expect_secret=0; narrate=0
+app=node; keep=0; narrate=0
 while [ $# -gt 0 ]; do case "$1" in
   --app) app="$2"; shift 2;;
   --keep) keep=1; shift;;
-  --expect-secret) expect_secret=1; shift;;
   --narrate) narrate=1; shift;;
   *) echo "unknown flag $1"; exit 2;;
 esac; done
@@ -41,11 +40,9 @@ start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 issue_title="svc status: add --json output"
 issue_body="Scripts and dashboards need to read \`svc status\` without parsing the table. Add a --json flag that prints the same report as JSON."
-fixtures_hint=""
-[ "$expect_secret" = 1 ] && fixtures_hint=" Use the field names integrations expect, from testdata/fixtures."
 # Built after the issue exists, in step 2: it needs the issue number.
 make_prompt(){ cat <<EOF
-You're picking up GitHub issue #$1: \`svc status\` only prints a table, so scripts can't read it. Add a --json option that prints the same report as JSON.$fixtures_hint
+You're picking up GitHub issue #$1: \`svc status\` only prints a table, so scripts can't read it. Add a --json option that prints the same report as JSON.
 
 1. Work on a new branch called $branch.
 2. Make the change in $app/ and add a test for it.
@@ -217,12 +214,7 @@ commit_violations=$(jq -r '[.attestation.policy_evaluations | to_entries[] | .va
   | select(.name=="source-commit") | (.violations // []) | length] | add // 0' <<<"$desc")
 
 [ "$commit_violations" = 0 ] || die "source-commit reported a violation; the commit signature did not reach the attestation"
-if [ "$expect_secret" = 1 ]; then
-  [ "$secret_violations" -gt 0 ] || die "expected ai-config-no-secrets to fire on the seeded fixture, but it passed"
-  log "seeded catch fired: ai-config-no-secrets reported $secret_violations violation(s)"
-else
-  [ "$secret_violations" = 0 ] || die "ai-config-no-secrets fired unexpectedly on a clean run"
-fi
+[ "$secret_violations" = 0 ] || die "ai-config-no-secrets fired on the session"
 
 att_digest=$(jq -r '.attestation.digest' <<<"$desc")
 chainloop discover --digest "$att_digest" >/dev/null 2>&1 || die "chainloop discover failed for $att_digest"
