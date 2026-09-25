@@ -27,3 +27,7 @@ export function render(report) {
   }
   return rows.join('\n') + '\n';
 }
+
+export function renderJson(report) {
+  return JSON.stringify({ ...report, healthy: healthy(report) }, null, 2) + '\n';
+}
