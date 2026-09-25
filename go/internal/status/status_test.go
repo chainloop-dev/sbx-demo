@@ -29,3 +29,12 @@ func TestRender(t *testing.T) {
 		}
 	}
 }
+
+func TestCollectIncludesEventBus(t *testing.T) {
+	for _, c := range Collect().Components {
+		if c.Name == "eventbus" {
+			return
+		}
+	}
+	t.Fatal("expected an eventbus component in the report")
+}

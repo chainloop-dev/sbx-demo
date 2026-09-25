@@ -39,6 +39,7 @@ func Collect() Report {
 			{Name: "api", OK: true, Latency: 12 * time.Millisecond, Detail: "200 OK"},
 			{Name: "database", OK: true, Latency: 3 * time.Millisecond, Detail: "connections 4/50"},
 			{Name: "queue", OK: true, Latency: 8 * time.Millisecond, Detail: "depth 0"},
+			{Name: "eventbus", OK: true, Latency: 5 * time.Millisecond, Detail: "subscribers 3, lag 0"},
 		},
 	}
 }
