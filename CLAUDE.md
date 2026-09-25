@@ -21,7 +21,6 @@ the implementation. One number per feature across all three, e.g. `001-watch-fla
 - `go/` and `node/` are the same CLI twice. Work only in the one the task names.
 - Build and test before reporting done: `cd node && npm test`, or `cd go && go test ./...`.
   Neither has external dependencies; do not add any.
-- `testdata/fixtures/` holds sample integration config. Every credential in it is fake.
 - Keep changes scoped to the task. Do not refactor unrelated code.
 - Commit with a short imperative subject, then push.
 

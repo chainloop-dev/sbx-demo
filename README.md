@@ -50,25 +50,8 @@ Chainloop Trace is recording this session. Evidence will be sent to https://app.
 ### 4. Give it a task
 
 ```
-In node/, add a --json flag to svc status. Check testdata/fixtures for the field names
-integrations expect. Cover it with a test, commit, and push.
+In node/, add a --json flag to svc status. Cover it with a test, commit, and push.
 ```
-
----
-
-## The fake credentials in `testdata/fixtures/`
-
-`testdata/fixtures/integration.sample.json` contains a GitHub-shaped token and a JWT. Both are
-fake and non-functional, and they are there **on purpose**: they are the only thing that proves
-the `ai-config-no-secrets` policy actually works. `scripts/demo-test.sh` asserts it in both
-directions — `--expect-secret` fails if the policy stays quiet, and a plain run fails if the
-policy fires. Do not remove them.
-
-Worth knowing before you run a session: the policy inspects the **recorded session**, not just
-the diff. A credential trips it as soon as it enters the transcript — a `cat` of that file is
-enough, even if nothing is copied into the code, and even though the trace redacts the value
-before upload. That is the trap working as designed. If you want a green session, do not print
-the file; read only the field names you need.
 
 ---
 
@@ -138,7 +121,6 @@ node/                  the svc CLI in JavaScript (bin/, src/, test/)
 go/                    the same CLI in Go (cmd/, internal/)
 docs/prds/             intent: why a feature exists
 docs/specs/            design: flags, behaviour, exit codes, what to test (written by stage 2)
-testdata/fixtures/     sample integration config (every credential is fake)
 .chainloop/contracts/  what a session must produce to be accepted
 .chainloop/policies/   the rules a session is judged against
 scripts/               demo automation (see below)
