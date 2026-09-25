@@ -27,6 +27,8 @@ In node/, add a --json flag to svc status. Cover it with a test, commit, and pus
 ## Layout
 
 - `node/`, `go/`: the same `svc status` CLI, twice. Pick one.
+  Pass `--json` to print the status report as JSON instead of a table, for
+  scripts: `svc status --json`.
 - `scripts/demo-reset.sh`: back to a clean state (sandboxes, branches, tree).
 - `scripts/demo-test.sh`: the whole loop, unattended, with assertions.
 
