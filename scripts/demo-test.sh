@@ -311,4 +311,7 @@ SUMMARY
   attribution   $ai_added AI lines across $files files
   est. cost     \$$cost
   view          https://app.chainloop.dev/u/${org:-$project}/workflow-runs/$att_digest
+
+  try it        git switch $branch && (cd $app && $json_cmd)
+                git switch $start_branch    # back, before the next run
 EOF
