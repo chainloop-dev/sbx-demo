@@ -8,6 +8,9 @@ the session is recorded, signed, and checked against policy by
 The code the agent works on is deliberately tiny — a CLI called `svc` — so the interesting
 part is the workflow around it, not the program.
 
+Chainloop's core is [open source](https://github.com/chainloop-dev/chainloop). For the product
+side of AI coding sessions, see [chainloop.dev/ai-sessions](https://chainloop.dev/ai-sessions).
+
 ---
 
 ## Quickstart
@@ -173,19 +176,8 @@ Three policies enforce this, and a failing one blocks the PR check:
 
 ---
 
-## Troubleshooting on Linux
+## Learn more
 
-**`sbx create` fails with `unknown volume driver: block`.** The daemon needs `/usr/sbin` on its
-PATH to find `mkfs.ext4`; without it the block volume driver is disabled at startup, and the
-error names neither. Start the daemon as `PATH="/usr/sbin:/sbin:$PATH" sbx daemon start -d`
-([sbx-releases#48](https://github.com/docker/sbx-releases/issues/48)). `scripts/lib-sbx.sh` does this for you.
-
-**`sbx` cannot reach `/dev/kvm`.** Run `sudo usermod -aG kvm $USER`, then open a new login
-shell. In an older shell, `sg kvm -c '<command>'` works without logging out.
-
-**Sandbox commits are not signed.** The sandbox forwards your host SSH agent, so it needs a key
-loaded on the host: `ssh-add -l` must list one.
-
----
-
-Full guide: <https://docs.chainloop.dev/guides/docker-sandboxes>
+- [Chainloop open source](https://github.com/chainloop-dev/chainloop): the evidence store and policy engine
+- [AI coding sessions](https://chainloop.dev/ai-sessions): governing AI-written code with Chainloop
+- [Docker Sandboxes guide](https://docs.chainloop.dev/guides/docker-sandboxes): the full setup this demo follows
