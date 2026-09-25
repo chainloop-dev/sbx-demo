@@ -24,6 +24,16 @@ Give it a task. When it commits and pushes, the pre-push hook signs the session 
 In node/, add a --json flag to svc status. Cover it with a test, commit, and push.
 ```
 
+## `svc status --json`
+
+`svc status` prints a table. Pass `--json` to get the same report as JSON for scripts
+(`checkedAt` plus one entry per component with `name`, `ok`, `latencyMs` and `detail`).
+The exit code is the same either way: 0 when every component is ok, 1 otherwise.
+
+```bash
+node node/bin/svc.js status --json | jq -r '.components[] | select(.ok | not) | .name'
+```
+
 ## Layout
 
 - `node/`, `go/`: the same `svc status` CLI, twice. Pick one.
