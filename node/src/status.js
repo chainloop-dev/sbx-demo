@@ -27,3 +27,7 @@ export function render(report) {
   }
   return rows.join('\n') + '\n';
 }
+
+export function renderJSON(report) {
+  return JSON.stringify(report, null, 2) + '\n';
+}
