@@ -198,6 +198,9 @@ log "run $run_id"
 
 show "chainloop workflow run describe --id $run_id -o json"
 desc=$(chainloop workflow run describe --id "$run_id" -o json)
+# An auto-created workflow gets an empty contract, so nothing is evaluated.
+jq -e '.attestation.policy_evaluations // {} | length > 0' <<<"$desc" >/dev/null \
+  || die "no policies were evaluated on run $run_id: point workflow ai-coding-session in project $project at contract sbx-demo-ai-coding-session (chainloop workflow update --contract)"
 [ "$narrate" = 1 ] && jq -r '.attestation.policy_evaluations | to_entries[] | .value[]
   | "\(if (.violations // []) | length > 0 then "✗" else "✓" end)  \(.name)"' <<<"$desc" | sort -u
 [ "$(jq -r '.verified' <<<"$desc")" = true ] || die "attestation signature did not verify"
