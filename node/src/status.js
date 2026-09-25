@@ -16,6 +16,10 @@ export function healthy(report) {
   return report.components.every((c) => c.ok);
 }
 
+export function renderJson(report) {
+  return JSON.stringify(report, null, 2) + '\n';
+}
+
 export function render(report) {
   const rows = [
     `checked at ${report.checkedAt}`,
