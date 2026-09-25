@@ -68,6 +68,28 @@ with_timeout(){
   if command -v timeout >/dev/null; then timeout "$@"
   else perl -e 'alarm shift; exec @ARGV or die "exec $ARGV[0]: $!\n"' "$@"; fi
 }
+# --narrate only. The agent runs headless (-p) and prints nothing until it is done,
+# so stream its session transcript from inside the sandbox: each tool call and
+# message as it happens. Transcripts from earlier runs persist in the sandbox's
+# ~/.claude volume, so only a file written after $1 (epoch seconds) counts.
+stream_agent(){
+  until sbx exec "$name" -- true >/dev/null 2>&1; do sleep 3; done
+  sbx exec "$name" -- sh -c 'while :; do
+      f=$(find ~/.claude/projects -name "*.jsonl" -newermt "@'"$1"'" 2>/dev/null | head -1)
+      [ -n "$f" ] && exec tail -n +1 -f "$f"
+      sleep 2
+    done' 2>/dev/null \
+  | jq -r --unbuffered 'select(.type == "assistant") | .message.content[]?
+      | if .type == "tool_use" then "  \u001b[36m▶ \(.name)\u001b[0m \(.input.command // .input.file_path // .input.pattern // "" | tostring | gsub("\n"; " ") | .[0:150])"
+        elif .type == "text" then "  \u001b[33m💬\u001b[0m \(.text | gsub("\n"; " ") | .[0:300])"
+        else empty end'
+}
+streamer=""
+stop_stream(){
+  [ -n "$streamer" ] || return 0
+  pkill -P "$streamer" 2>/dev/null || true; kill "$streamer" 2>/dev/null || true
+  wait "$streamer" 2>/dev/null || true; streamer=""
+}
 
 # ---- 1. preflight ----------------------------------------------------------
 command -v sbx >/dev/null || die "sbx not installed"
@@ -89,7 +111,7 @@ org=$(awk -F: '/^organization:/ {gsub(/[ "]/,"",$2); print $2}' .chainloop.yml)
 log "preflight ok: project=$project app=$app branch=$branch"
 # The sandbox shares this checkout, and the agent leaves it on its own branch.
 start_branch=$(git branch --show-current)
-cleanup(){ git worktree remove -f "${wt:-}" 2>/dev/null || true; git checkout -q "$start_branch" 2>/dev/null || true; }
+cleanup(){ stop_stream; git worktree remove -f "${wt:-}" 2>/dev/null || true; git checkout -q "$start_branch" 2>/dev/null || true; }
 trap cleanup EXIT
 
 # ---- 2. agent run ----------------------------------------------------------
@@ -112,6 +134,7 @@ sbx secret set github --sandbox "$name" -f -t "$gh_token" >/dev/null || die "cou
 show "sbx run --name $name --kit $SIGN_KIT $KIT . -- -p \"<prompt>\""
 log "launching sandbox (first ever run needs a terminal: approve the credential prompt once)"
 deadline=$((SECONDS + 1200))
+if [ "$narrate" = 1 ]; then stream_agent "$(( $(date +%s) - 5 ))" & streamer=$!; fi
 if ! with_timeout 1200 sbx run --name "$name" --kit-args-file .env --kit "$SIGN_KIT" "$KIT" . -- -p "$prompt"; then
   # sbx run can lose its exec attach ("inspect exec: context deadline exceeded")
   # while the agent keeps working in the sandbox. Wait for it; step 3 checks the push.
@@ -122,6 +145,7 @@ if ! with_timeout 1200 sbx run --name "$name" --kit-args-file .env --kit "$SIGN_
   done
   log "agent finished"
 fi
+stop_stream
 
 # ---- 3. assert the agent's work -------------------------------------------
 stage "Check the agent's commit"
