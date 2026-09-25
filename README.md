@@ -1,5 +1,8 @@
 # sbx-demo
 
+> ⭐ **Chainloop is open source.** If this demo is useful to you, please
+> [star chainloop-dev/chainloop on GitHub](https://github.com/chainloop-dev/chainloop). It helps other people find it.
+
 A small, self-contained repository for demonstrating **AI coding sessions that produce
 evidence**. You give a coding agent a task inside a [Docker Sandbox](https://docs.docker.com/ai/sandboxes/);
 the session is recorded, signed, and checked against policy by
@@ -8,8 +11,15 @@ the session is recorded, signed, and checked against policy by
 The code the agent works on is deliberately tiny — a CLI called `svc` — so the interesting
 part is the workflow around it, not the program.
 
-Chainloop's core is [open source](https://github.com/chainloop-dev/chainloop). For the product
-side of AI coding sessions, see [chainloop.dev/ai-sessions](https://chainloop.dev/ai-sessions).
+For the product side of AI coding sessions, see
+[chainloop.dev/ai-sessions](https://chainloop.dev/ai-sessions).
+
+## Watch the demo
+
+[![Docker Sandbox with Chainloop: watch the demo](images/video-thumbnail.jpg)](https://www.tella.tv/video/docker-sandbox-with-chainloop-19bf)
+
+A coding agent in a Docker Sandbox picks up an issue, opens the pull request, and works
+through its checks, with every step recorded as signed evidence in Chainloop.
 
 ---
 
@@ -155,6 +165,36 @@ Three policies enforce this, and a failing one blocks the PR check:
   schemas, endpoints, file names, or acceptance criteria.
 - **`tests-were-run`** — a diff can show that test files changed; only the recorded session
   shows whether the tests were actually executed.
+
+---
+
+## What it looks like
+
+**Every AI coding session in one list.** Each pull request shows its AI Session Score, how many
+policies passed, how much of the code the AI wrote, lines changed, cost, duration, and tokens.
+
+![Chainloop Coding Sessions list](images/coding-sessions.png)
+
+**The verdict lands on the pull request.** Chainloop comments with the session's score, failing
+policies, AI-versus-human attribution, and a link to the full session, so reviewers never leave GitHub.
+
+![Chainloop AI Session Checks comment on a GitHub pull request](images/pr-comment.png)
+
+**A score with reasons.** The AI Session Score breaks down into criteria (alignment, scope
+discipline, verification, context and planning, solution quality), each with a short finding.
+
+![AI Session Score breakdown on the pull request](images/session-score.png)
+
+**The organization-wide view.** Sessions, active developers, AI-assisted pull requests and how
+much of the code AI wrote, plus how each score criterion trends over time.
+
+![Chainloop AI governance overview dashboard](images/overview.png)
+
+**Provenance you can follow.** The signed attestation links the commit to the session transcript,
+the agent's configuration, and the pull request validation runs. `chainloop discover` walks the
+same graph from the command line.
+
+![Provenance graph of an AI coding session attestation](images/provenance.png)
 
 ---
 
