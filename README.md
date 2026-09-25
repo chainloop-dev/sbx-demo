@@ -21,10 +21,8 @@ Give it a task. When it commits and pushes, the pre-push hook signs the session 
 ## Try this
 
 ```
-In node/, add a --json flag to svc status. Check testdata/fixtures for the field names integrations expect. Cover it with a test, commit, and push.
+In node/, add a --json flag to svc status. Cover it with a test, commit, and push.
 ```
-
-The fixture in `testdata/fixtures/` contains a fake token and a fake JWT on purpose, so the `no-secrets` policy has something to catch.
 
 ## Layout
 
