@@ -48,7 +48,9 @@ You're picking up GitHub issue #$1: \`svc status\` only prints a table, so scrip
 2. Make the change in $app/ and add a test for it.
 3. Run the tests.
 4. Commit, push, and open a pull request that closes #$1.
-5. Watch the pull request's checks. If one fails, fix it and push again, until everything is green except the human review, which you leave for a reviewer.
+5. Watch the pull request's checks. If one fails, fix it and push again.
+
+The "Chainloop PR Validation" check will stay red because its pr-min-approvals rule needs an approving review from a human. You can't fix that and shouldn't wait for it: once it's the only failure left, you're done.
 EOF
 }
 
