@@ -6,11 +6,14 @@
 # --narrate is for presenting: it prints each command before running it, shows
 # its output instead of hiding it, and waits for Enter between stages.
 #
-# The script opens a GitHub issue, the agent implements it (branch, code, test,
-# signed commit, push), and the script opens the pull request from that commit.
-# The agent's task ends at the push on purpose: the pre-push hook is what records
-# the session, so anything the agent did after it would never reach Chainloop's
-# scorer, which would then mark the session as having stopped short.
+# The script opens a GitHub issue; the agent closes the governance loop on its own:
+# branch, code, test, signed commit, push, pull request, then it watches the PR
+# checks and fixes whatever fails.
+#
+# Known trade-off: the pre-push hook is what records the session, so the PR steps
+# only reach Chainloop when a fix makes the agent push again. When every check is
+# green on the first push, the recorded session ends at that push and the AI
+# Session Score's alignment criterion reads the PR steps as never done.
 #
 # Exit 0 only if: the commit is signed and its tests pass, the PR links the issue,
 # every PR check is green except the human approval, and Chainloop holds a verified
@@ -42,15 +45,13 @@ fixtures_hint=""
 [ "$expect_secret" = 1 ] && fixtures_hint=" Use the field names integrations expect, from testdata/fixtures."
 # Built after the issue exists, in step 2: it needs the issue number.
 make_prompt(){ cat <<EOF
-GitHub issue #$1 asks for machine-readable output from \`svc status\`, so scripts and dashboards can use it.
+You're picking up GitHub issue #$1: \`svc status\` only prints a table, so scripts can't read it. Add a --json option that prints the same report as JSON.$fixtures_hint
 
-Implement it in $app/:
-1. Create a branch called $branch.
-2. Add a --json flag to \`svc status\` that prints the report as JSON.$fixtures_hint
-3. Add a test for it and run the test suite.
-4. Commit with a message that summarizes the change and ends with "Closes #$1", then push.
-
-Stop after the push. The pull request is opened from your commit message.
+1. Work on a new branch called $branch.
+2. Make the change in $app/ and add a test for it.
+3. Run the tests.
+4. Commit, push, and open a pull request that closes #$1.
+5. Watch the pull request's checks. If one fails, fix it and push again, until everything is green except the human review, which you leave for a reviewer.
 EOF
 }
 
@@ -151,12 +152,11 @@ json=$(cd "$wt/$app" && $json_cmd) || die "$json_cmd failed"
 jq -e '.components|length>0' <<<"$json" >/dev/null || die "--json output has no components"
 log "code ok: tests pass and --json is valid"
 
-# ---- 4. open and check the pull request -------------------------------------
-stage "Open the pull request from the agent's commit"
-show "gh pr create --head $branch --fill"
-gh pr view "$branch" >/dev/null 2>&1 || quiet gh pr create --head "$branch" --base main --fill \
-  || die "could not open a pull request for $branch"
-pr_json=$(gh pr view "$branch" --json number,url,title,body) || die "no pull request for $branch"
+# ---- 4. check the agent's pull request --------------------------------------
+stage "Check the pull request the agent opened"
+show "gh pr view $branch"
+pr_json=$(gh pr view "$branch" --json number,url,title,body 2>/dev/null) \
+  || die "the agent did not open a pull request for $branch"
 pr_url=$(jq -r .url <<<"$pr_json")
 [ "$narrate" = 1 ] && jq -r '"#\(.number) \(.title)\n\(.url)\n\n\(.body)"' <<<"$pr_json"
 jq -e --arg ref "#$issue" '(.title + " " + .body) | contains($ref)' <<<"$pr_json" >/dev/null \
