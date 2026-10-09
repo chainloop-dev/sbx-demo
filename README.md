@@ -193,3 +193,5 @@ same graph from the command line.
 - [Chainloop open source](https://github.com/chainloop-dev/chainloop): the evidence store and policy engine
 - [AI coding sessions](https://chainloop.dev/ai-sessions): governing AI-written code with Chainloop
 - [Docker Sandboxes guide](https://docs.chainloop.dev/guides/docker-sandboxes): the full setup this demo follows
+
+Last updated: 2026-10-09
