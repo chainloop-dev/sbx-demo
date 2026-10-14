@@ -195,3 +195,5 @@ same graph from the command line.
 - [Docker Sandboxes guide](https://docs.chainloop.dev/guides/docker-sandboxes): the full setup this demo follows
 
 <!-- kit-sign-test: verifying signed commits from the sandbox, with tests run -->
+
+<!-- kit-sign-test: pushed from the sandbox on 2026-10-14 -->
