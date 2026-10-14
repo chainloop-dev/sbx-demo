@@ -194,4 +194,4 @@ same graph from the command line.
 - [AI coding sessions](https://chainloop.dev/ai-sessions): governing AI-written code with Chainloop
 - [Docker Sandboxes guide](https://docs.chainloop.dev/guides/docker-sandboxes): the full setup this demo follows
 
-<!-- kit-sign-test: verifying signed commits from the sandbox -->
+<!-- kit-sign-test: verifying signed commits from the sandbox, with tests run -->
